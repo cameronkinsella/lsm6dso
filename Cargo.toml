@@ -1,0 +1,32 @@
+[package]
+authors = ["Cameron Kinsella"]
+name = "lsm6dso"
+version = "0.1.0"
+edition = "2021"
+description = "A platform-agnostic driver for the LSM6DSO 6-DoF Accel + Gyro IMU"
+repository = "https://github.com/cameronkinsella/lsm6dso"
+readme = "README.md"
+license = "MIT"
+keywords = [
+    "embedded-hal-driver",
+    "imu",
+    "accelerometer",
+    "gyroscope",
+    "sensor",
+]
+categories = [
+    "embedded",
+    "no-std",
+    "hardware-support",
+]
+
+[dependencies]
+arrayref = "0.3.6"
+embedded-hal = {version = "0.2", optional = true}
+embedded-hal-async = {version = "0.2.0-alpha.0", optional = true}
+maybe-async-cfg = "0.2.1"
+
+[features]
+async = ["embedded-hal-async"]
+blocking = ["embedded-hal"]
+default = ["blocking"]
