@@ -38,15 +38,6 @@ impl<E: fmt::Debug> From<E> for Error<E> {
     }
 }
 
-// I2C type may not implement Debug (trait bound for Result), so provide a wrapper type with Debug
-pub struct I2cError<I2C: I2c>(I2C, Error<I2C::Error>);
-
-impl<I2C: I2c> fmt::Debug for I2cError<I2C> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "I2C Error: {:?}", self.1)
-    }
-}
-
 // Value of the WHO_AM_I register
 const CHIP_ID: u8 = 0x6C;
 
@@ -68,22 +59,12 @@ where
     I2C: I2c,
 {
     /// Create an instance of the Lsm6dso driver
-    /// If the device cannot be detected on the bus, an error will be returned
-    pub async fn new(i2c: I2C, addr: u8) -> Result<Self, I2cError<I2C>> {
-        let mut lsm = Lsm6dso {
+    pub async fn new(i2c: I2C, addr: u8) -> Self {
+        Lsm6dso {
             i2c,
             addr,
             accelerometer_scale: None,
             gyroscope_scale: None,
-        };
-
-        match lsm.check().await {
-            Ok(true) => match lsm.set_auto_increment(true).await {
-                Ok(()) => Ok(lsm),
-                Err(e) => Err(I2cError(lsm.release(), e)),
-            },
-            Ok(false) => Err(I2cError(lsm.release(), Error::ChipDetectFailed)),
-            Err(e) => Err(I2cError(lsm.release(), e)),
         }
     }
 
@@ -278,10 +259,13 @@ where
         }
     }
 
-    async fn check(&mut self) -> Result<bool, Error<I2C::Error>> {
-        self.read_register(Register::WhoAmI)
-            .await
-            .map(|chip_id| chip_id == CHIP_ID)
+    /// Check if the device is connected and responding
+    pub async fn check(&mut self) -> Result<(), Error<I2C::Error>> {
+        if self.read_register(Register::WhoAmI).await? == CHIP_ID {
+            Ok(())
+        } else {
+            Err(Error::ChipDetectFailed)
+        }
     }
 
     async fn set_auto_increment(&mut self, enabled: bool) -> Result<(), Error<I2C::Error>> {
