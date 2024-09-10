@@ -308,6 +308,7 @@ impl TryFrom<u8> for GyroscopeFullScale {
 }
 
 /// Bit fields for CTRL3_C
+#[allow(unused)]
 pub enum Ctrl3C {
     Boot = 7,
     BlockDataUpdate = 6,
@@ -319,6 +320,7 @@ pub enum Ctrl3C {
 }
 
 /// Bit fields for CTRL6_C
+#[allow(unused)]
 pub enum Ctrl6C {
     GyroEdgeTrigger = 7,
     GyroLevelTrigger = 6,
@@ -331,6 +333,7 @@ pub enum Ctrl6C {
 }
 
 /// Bit fields for CTRL6_G
+#[allow(unused)]
 pub enum Ctrl7G {
     GyroHighPerformanceMode = 7,
     GyroHighPassFilter = 6,
