@@ -17,7 +17,7 @@ use maybe_async_cfg;
 compile_error!("feature \"blocking\" and feature \"async\" cannot be enabled at the same time");
 
 #[cfg(feature = "blocking")]
-use embedded_hal::blocking::i2c::{Write, WriteRead};
+use embedded_hal::i2c::I2c;
 #[cfg(feature = "async")]
 use embedded_hal_async::i2c::I2c;
 
@@ -37,14 +37,9 @@ impl<E: fmt::Debug> From<E> for Error<E> {
 }
 
 // I2C type may not implement Debug (trait bound for Result), so provide a wrapper type with Debug
-pub struct I2cError<I2C, E: fmt::Debug>(I2C, Error<E>)
-where
-    I2C: Write<Error = E> + WriteRead<Error = E>;
+pub struct I2cError<I2C: I2c>(I2C, Error<I2C::Error>);
 
-impl<I2C, E: fmt::Debug> fmt::Debug for I2cError<I2C, E>
-where
-    I2C: Write<Error = E> + WriteRead<Error = E>,
-{
+impl<I2C: I2c> fmt::Debug for I2cError<I2C> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "I2C Error: {:?}", self.1)
     }
@@ -65,20 +60,14 @@ pub struct Lsm6dso<I2C> {
     gyroscope_scale: Option<GyroscopeFullScale>,
 }
 
-#[maybe_async_cfg::maybe(
-    sync(feature = "blocking", keep_self),
-    async(
-        feature = "async",
-        idents(Write(async = "I2c"), WriteRead(async = "I2c"))
-    )
-)]
-impl<I2C, E: fmt::Debug> Lsm6dso<I2C>
+#[maybe_async_cfg::maybe(sync(feature = "blocking", keep_self), async(feature = "async",))]
+impl<I2C> Lsm6dso<I2C>
 where
-    I2C: Write<Error = E> + WriteRead<Error = E>,
+    I2C: I2c,
 {
     /// Create an instance of the Lsm6dso driver
     /// If the device cannot be detected on the bus, an error will be returned
-    pub async fn new(i2c: I2C, addr: u8) -> Result<Self, I2cError<I2C, E>> {
+    pub async fn new(i2c: I2C, addr: u8) -> Result<Self, I2cError<I2C>> {
         let mut lsm = Lsm6dso {
             i2c,
             addr,
@@ -100,7 +89,7 @@ where
     pub async fn set_accelerometer_output(
         &mut self,
         output: AccelerometerOutput,
-    ) -> Result<(), Error<E>> {
+    ) -> Result<(), Error<I2C::Error>> {
         self.write_register_option(Register::Ctrl1XL, output).await
     }
 
@@ -108,7 +97,7 @@ where
     pub async fn set_accelerometer_scale(
         &mut self,
         scale: AccelerometerScale,
-    ) -> Result<(), Error<E>> {
+    ) -> Result<(), Error<I2C::Error>> {
         match self.write_register_option(Register::Ctrl1XL, scale).await {
             Ok(()) => {
                 self.accelerometer_scale = Some(scale);
@@ -122,12 +111,18 @@ where
     }
 
     /// Set the gyroscope output rate
-    pub async fn set_gyroscope_output(&mut self, output: GyroscopeOutput) -> Result<(), Error<E>> {
+    pub async fn set_gyroscope_output(
+        &mut self,
+        output: GyroscopeOutput,
+    ) -> Result<(), Error<I2C::Error>> {
         self.write_register_option(Register::Ctrl2G, output).await
     }
 
     /// Set the gyroscope operating range
-    pub async fn set_gyroscope_scale(&mut self, scale: GyroscopeFullScale) -> Result<(), Error<E>> {
+    pub async fn set_gyroscope_scale(
+        &mut self,
+        scale: GyroscopeFullScale,
+    ) -> Result<(), Error<I2C::Error>> {
         match self.write_register_option(Register::Ctrl2G, scale).await {
             Ok(()) => {
                 self.gyroscope_scale = Some(scale);
@@ -141,7 +136,7 @@ where
     }
 
     /// Set the low power mode
-    pub async fn set_low_power_mode(&mut self, low_power: bool) -> Result<(), Error<E>> {
+    pub async fn set_low_power_mode(&mut self, low_power: bool) -> Result<(), Error<I2C::Error>> {
         // N.B. "1" means low-power, "0" means high-performance.
         self.write_bit(
             Register::Ctrl6C,
@@ -158,7 +153,9 @@ where
     }
 
     /// Read all three sensors in one transaction. Returns temperature, gyro, accelerometer.
-    pub async fn read_all(&mut self) -> Result<(f32, (f32, f32, f32), (f32, f32, f32)), Error<E>> {
+    pub async fn read_all(
+        &mut self,
+    ) -> Result<(f32, (f32, f32, f32), (f32, f32, f32)), Error<I2C::Error>> {
         let gyro_scale = self.read_gyroscope_scale().await?;
         let accel_scale = self.read_accelerometer_scale().await?;
         let data = self.read_registers::<14>(Register::OutTempL).await?;
@@ -171,7 +168,7 @@ where
     }
 
     /// Read the gyroscope data for each axis (RAD/s)
-    pub async fn read_gyro(&mut self) -> Result<(f32, f32, f32), Error<E>> {
+    pub async fn read_gyro(&mut self) -> Result<(f32, f32, f32), Error<I2C::Error>> {
         let scale = self.read_gyroscope_scale().await?;
         self.read_registers(Register::OutXLG)
             .await
@@ -191,7 +188,7 @@ where
     }
 
     /// Read the accelerometer data for each axis (m/s^2)
-    pub async fn read_accelerometer(&mut self) -> Result<(f32, f32, f32), Error<E>> {
+    pub async fn read_accelerometer(&mut self) -> Result<(f32, f32, f32), Error<I2C::Error>> {
         let scale = self.read_accelerometer_scale().await?;
         self.read_registers(Register::OutXLA)
             .await
@@ -212,7 +209,7 @@ where
     }
 
     /// Read the temperature (degC)
-    pub async fn read_temperature(&mut self) -> Result<f32, Error<E>> {
+    pub async fn read_temperature(&mut self) -> Result<f32, Error<I2C::Error>> {
         let data = self.read_registers::<2>(Register::OutTempL).await?;
         Ok(Self::convert_temp_data(&data))
     }
@@ -231,17 +228,19 @@ where
     }
 
     /// Check if there is new accelerometer data
-    pub async fn accel_data_available(&mut self) -> Result<bool, Error<E>> {
+    pub async fn accel_data_available(&mut self) -> Result<bool, Error<I2C::Error>> {
         self.read_status().await.map(|status| status & 0b1 != 0)
     }
 
     /// Check if there is new gyro scope data
-    pub async fn gyro_data_available(&mut self) -> Result<bool, Error<E>> {
+    pub async fn gyro_data_available(&mut self) -> Result<bool, Error<I2C::Error>> {
         self.read_status().await.map(|status| status & 0b10 != 0)
     }
 
     /// Read the accelerometer scale value from the configuration register
-    pub async fn read_accelerometer_scale(&mut self) -> Result<AccelerometerScale, Error<E>> {
+    pub async fn read_accelerometer_scale(
+        &mut self,
+    ) -> Result<AccelerometerScale, Error<I2C::Error>> {
         match self.accelerometer_scale {
             Some(v) => Ok(v),
             None => {
@@ -253,7 +252,7 @@ where
     }
 
     /// Read the gyroscope scale value from the configuration register
-    pub async fn read_gyroscope_scale(&mut self) -> Result<GyroscopeFullScale, Error<E>> {
+    pub async fn read_gyroscope_scale(&mut self) -> Result<GyroscopeFullScale, Error<I2C::Error>> {
         match self.gyroscope_scale {
             Some(v) => Ok(v),
             None => {
@@ -264,18 +263,18 @@ where
         }
     }
 
-    async fn check(&mut self) -> Result<bool, Error<E>> {
+    async fn check(&mut self) -> Result<bool, Error<I2C::Error>> {
         self.read_register(Register::WhoAmI)
             .await
             .map(|chip_id| chip_id == CHIP_ID)
     }
 
-    async fn set_auto_increment(&mut self, enabled: bool) -> Result<(), Error<E>> {
+    async fn set_auto_increment(&mut self, enabled: bool) -> Result<(), Error<I2C::Error>> {
         self.write_bit(Register::Ctrl3C, enabled as u8, Ctrl3C::AutoIncrement as u8)
             .await
     }
 
-    async fn read_status(&mut self) -> Result<u8, Error<E>> {
+    async fn read_status(&mut self) -> Result<u8, Error<I2C::Error>> {
         self.read_register(Register::StatusReg).await
     }
 
@@ -283,7 +282,7 @@ where
         &mut self,
         register: Register,
         ro: RO,
-    ) -> Result<(), Error<E>> {
+    ) -> Result<(), Error<I2C::Error>> {
         self.write_bits(register, ro.value(), RO::mask(), RO::bit_offset())
             .await
     }
@@ -291,7 +290,7 @@ where
     async fn read_register_option<RO: RegisterOption + TryFrom<u8>>(
         &mut self,
         register: Register,
-    ) -> Result<RO, Error<E>> {
+    ) -> Result<RO, Error<I2C::Error>> {
         let value = self.read_register(register).await?;
         RO::try_from(value).map_err(|_| Error::RegisterReadFailed)
     }
@@ -301,7 +300,7 @@ where
         register: Register,
         value: u8,
         shift: u8,
-    ) -> Result<(), Error<E>> {
+    ) -> Result<(), Error<I2C::Error>> {
         self.write_bits(register, value, 0x01, shift).await
     }
 
@@ -311,7 +310,7 @@ where
         new_value: u8,
         mask: u8,
         shift: u8,
-    ) -> Result<(), Error<E>> {
+    ) -> Result<(), Error<I2C::Error>> {
         let current_value = self.read_register(register).await?;
         let modified_value = (current_value & !(mask << shift)) | ((new_value & mask) << shift);
         self.write_register(register, modified_value).await
@@ -327,7 +326,7 @@ where
     }
 
     // Read a byte from the given register
-    async fn read_register(&mut self, register: Register) -> Result<u8, Error<E>> {
+    async fn read_register(&mut self, register: Register) -> Result<u8, Error<I2C::Error>> {
         let mut res = [0u8];
         self.i2c
             .write_read(self.addr, &[register.into()], &mut res)
@@ -338,7 +337,7 @@ where
     async fn read_registers<const N: usize>(
         &mut self,
         start_reg: Register,
-    ) -> Result<[u8; N], Error<E>> {
+    ) -> Result<[u8; N], Error<I2C::Error>> {
         let mut res = [0u8; N];
         self.i2c
             .write_read(self.addr, &[start_reg.into()], &mut res)
@@ -347,7 +346,11 @@ where
     }
 
     // Write the specified value to the given register
-    async fn write_register(&mut self, register: Register, value: u8) -> Result<(), Error<E>> {
+    async fn write_register(
+        &mut self,
+        register: Register,
+        value: u8,
+    ) -> Result<(), Error<I2C::Error>> {
         self.i2c
             .write(self.addr, &[register.into(), value])
             .await
