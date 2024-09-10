@@ -1,9 +1,7 @@
 #![no_std]
-#![allow(unused)]
 mod regs;
 
 use arrayref::array_refs;
-use core::any::Any;
 use core::convert::TryFrom;
 use core::fmt;
 
@@ -12,8 +10,6 @@ use regs::*;
 pub use regs::{
     AccelerometerOutput, AccelerometerScale, Bandwidth, GyroscopeFullScale, GyroscopeOutput,
 };
-
-use maybe_async_cfg;
 
 #[cfg(all(feature = "blocking", feature = "async"))]
 compile_error!("feature \"blocking\" and feature \"async\" cannot be enabled at the same time");
@@ -43,6 +39,16 @@ const CHIP_ID: u8 = 0x6C;
 
 // Earth gravity constant for acceleration conversion
 const EARTH_GRAVITY: f32 = 9.80665;
+
+pub struct SensorData {
+    pub temp: f32,
+    pub accel_x: f32,
+    pub accel_y: f32,
+    pub accel_z: f32,
+    pub gyro_x: f32,
+    pub gyro_y: f32,
+    pub gyro_z: f32,
+}
 
 /// 6-DoF IMU accelerometer + gyro
 #[maybe_async_cfg::maybe(sync(feature = "blocking", keep_self), async(feature = "async"))]
@@ -136,18 +142,22 @@ where
     }
 
     /// Read all three sensors in one transaction. Returns temperature, gyro, accelerometer.
-    pub async fn read_all(
-        &mut self,
-    ) -> Result<(f32, (f32, f32, f32), (f32, f32, f32)), Error<I2C::Error>> {
+    pub async fn read_all(&mut self) -> Result<SensorData, Error<I2C::Error>> {
         let gyro_scale = self.read_gyroscope_scale().await?;
         let accel_scale = self.read_accelerometer_scale().await?;
         let data = self.read_registers::<14>(Register::OutTempL).await?;
         let (temp, gyro, accel) = array_refs!(&data, 2, 6, 6);
-        Ok((
-            Self::convert_temp_data(temp),
-            Self::convert_gyro_data(gyro, gyro_scale),
-            Self::convert_accel_data(accel, accel_scale),
-        ))
+        let accel_data = Self::convert_accel_data(accel, accel_scale);
+        let gyro_data = Self::convert_gyro_data(gyro, gyro_scale);
+        Ok(SensorData {
+            temp: Self::convert_temp_data(temp),
+            accel_x: accel_data.0,
+            accel_y: accel_data.1,
+            accel_z: accel_data.2,
+            gyro_x: gyro_data.0,
+            gyro_y: gyro_data.1,
+            gyro_z: gyro_data.2,
+        })
     }
 
     /// Read the gyroscope data for each axis (RAD/s)
@@ -205,9 +215,7 @@ where
         // As float
         let temperature = temperature as f32;
         // Converted given the temperature sensitively value 16 bits per C
-        let temperature = (temperature / 16.0) + 25.0;
-
-        temperature
+        (temperature / 16.0) + 25.0
     }
 
     /// Check if there is new accelerometer data
@@ -266,11 +274,6 @@ where
         } else {
             Err(Error::ChipDetectFailed)
         }
-    }
-
-    async fn set_auto_increment(&mut self, enabled: bool) -> Result<(), Error<I2C::Error>> {
-        self.write_bit(Register::Ctrl3C, enabled as u8, Ctrl3C::AutoIncrement as u8)
-            .await
     }
 
     async fn read_status(&mut self) -> Result<u8, Error<I2C::Error>> {
