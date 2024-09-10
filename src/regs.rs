@@ -234,6 +234,30 @@ impl RegisterOption for GyroscopeOutput {
     }
 }
 
+/// Bandwidth of the accelerometer LPF2 digital low pass filter
+#[derive(Debug, Clone, Copy)]
+pub enum Bandwidth {
+    OdrDiv4 = 0b000,
+    OdrDiv10 = 0b001,
+    OdrDiv20 = 0b010,
+    OdrDiv45 = 0b011,
+    OdrDiv100 = 0b100,
+    OdrDiv200 = 0b101,
+    OdrDiv400 = 0b110,
+    OdrDiv800 = 0b111,
+}
+impl RegisterOption for Bandwidth {
+    fn value(&self) -> u8 {
+        *self as u8
+    }
+    fn mask() -> u8 {
+        0b111
+    }
+    fn bit_offset() -> u8 {
+        5
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum GyroscopeFullScale {
     Dps125 = 0b001,

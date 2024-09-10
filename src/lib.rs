@@ -9,7 +9,9 @@ use core::fmt;
 
 use regs::*;
 
-pub use regs::{AccelerometerOutput, AccelerometerScale, GyroscopeFullScale, GyroscopeOutput};
+pub use regs::{
+    AccelerometerOutput, AccelerometerScale, Bandwidth, GyroscopeFullScale, GyroscopeOutput,
+};
 
 use maybe_async_cfg;
 
@@ -260,6 +262,19 @@ where
                 self.gyroscope_scale = Some(scale);
                 Ok(scale)
             }
+        }
+    }
+
+    /// Set the accelerometer LPF2 digital low pass filter bandwidth
+    pub async fn set_accelerometer_low_pass(
+        &mut self,
+        bandwidth: Option<Bandwidth>,
+    ) -> Result<(), Error<I2C::Error>> {
+        if let Some(cutoff) = bandwidth {
+            self.write_bit(Register::Ctrl1XL, 1, 1).await?;
+            self.write_register_option(Register::Ctrl8Xl, cutoff).await
+        } else {
+            self.write_bit(Register::Ctrl1XL, 0, 1).await
         }
     }
 
