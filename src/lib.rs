@@ -214,8 +214,8 @@ where
         let temperature = ((hi as i16) << 8) | (lo as i16);
         // As float
         let temperature = temperature as f32;
-        // Converted given the temperature sensitively value 16 bits per C
-        (temperature / 16.0) + 25.0
+        // Converted given the temperature sensitivity value 256 LSB/°C
+        (temperature / 256.0) + 25.0
     }
 
     /// Check if there is new accelerometer data
